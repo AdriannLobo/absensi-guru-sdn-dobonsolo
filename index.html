@@ -1443,39 +1443,24 @@ const S = {
 //  GAS membacanya via e.postData.contents dan JSON.parse().
 // ─────────────────────────────────────────────────────────────
 async function callGAS(action, params = {}) {
-  const body = JSON.stringify({ action, ...params });
+  const data = encodeURIComponent(JSON.stringify(params));
+  const url  = GAS_URL + '?action=' + encodeURIComponent(action) + '&data=' + data;
 
   let res;
   try {
-    res = await fetch(GAS_URL, {
-      method : 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body,
-      redirect: 'follow',
-    });
+    res = await fetch(url);
   } catch (networkErr) {
-    throw new Error(
-      'Tidak dapat menghubungi server. Periksa koneksi internet Anda. (' + networkErr.message + ')'
-    );
+    throw new Error('Tidak dapat menghubungi server. (' + networkErr.message + ')');
   }
 
-  if (!res.ok) {
-    throw new Error('Server error HTTP ' + res.status + '. Coba lagi beberapa saat.');
-  }
+  if (!res.ok) throw new Error('Server error HTTP ' + res.status);
 
-  let data;
-  try {
-    data = await res.json();
-  } catch (_) {
-    throw new Error('Respons server tidak valid. Pastikan URL GAS benar.');
-  }
+  let json;
+  try { json = await res.json(); }
+  catch (_) { throw new Error('Respons server tidak valid. Pastikan URL GAS benar.'); }
 
-  // GAS always returns { success, data } or { success: false, error }
-  if (!data.success) {
-    throw new Error(data.error || 'Terjadi kesalahan di server.');
-  }
-
-  return data; // data.data berisi payload aktual
+  if (!json.success) throw new Error(json.error || 'Terjadi kesalahan di server.');
+  return json;
 }
 
 // ─────────────────────────────────────────────────────────────
