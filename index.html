@@ -1395,21 +1395,21 @@
 
 <!-- ══════════════════════ JAVASCRIPT ══════════════════════ -->
 <script>
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  ⚠️  KONFIGURASI — WAJIB DIISI SEBELUM DEPLOY             ║
-// ╠══════════════════════════════════════════════════════════════╣
-// ║                                                              ║
-// ║  GAS_URL  → URL Web App dari Google Apps Script.            ║
-// ║             Deploy → Manage Deployments → salin URL-nya.   ║
-// ║                                                              ║
-// ║  GOOGLE_CLIENT_ID → OAuth 2.0 Client ID dari Google Cloud.  ║
-// ║  Langkah:                                                    ║
-// ║    1. Buka console.cloud.google.com                         ║
-// ║    2. APIs & Services → Credentials → Create Credentials    ║
-// ║    3. OAuth 2.0 Client ID → Web Application                 ║
-// ║    4. Authorized JS Origins: https://<username>.github.io   ║
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║  ⚠️  KONFIGURASI — WAJIB DIISI SEBELUM DEPLOY                    ║ 
+// ╠═══════════════════════════════════════════════════════════════════╣
+// ║                                                                   ║
+// ║  GAS_URL  → URL Web App dari Google Apps Script.                  ║
+// ║             Deploy → Manage Deployments → salin URL-nya.          ║
+// ║                                                                   ║
+// ║  GOOGLE_CLIENT_ID → OAuth 2.0 Client ID dari Google Cloud.        ║
+// ║  Langkah:                                                         ║
+// ║    1. Buka console.cloud.google.com                               ║
+// ║    2. APIs & Services → Credentials → Create Credentials          ║
+// ║    3. OAuth 2.0 Client ID → Web Application                       ║
+// ║    4. Authorized JS Origins: https://<username>.github.io         ║
 // ║    5. Salin Client ID (format: xxxxxx.apps.googleusercontent.com) ║
-// ╚══════════════════════════════════════════════════════════════╝
+// ╚═══════════════════════════════════════════════════════════════════╝
 
 const GAS_URL          = 'https://script.google.com/macros/s/AKfycbxJD75d8ZGC71dP65dQNye_x9FaFnx8ijlWfMIP-IdjFyCBMhd1S07JrVdpoDPUsW2w/exec';
 const GOOGLE_CLIENT_ID = '131466305902-kpb3dchkanm3lqr2qhfch9lceoibrbl1.apps.googleusercontent.com';
@@ -1545,6 +1545,10 @@ function parseJWT(token) {
  * Sign-out: cabut sesi Google dan kembali ke halaman login.
  */
 function signOut() {
+  // Hapus sesi tersimpan agar halaman login muncul saat berikutnya dibuka
+  localStorage.removeItem('guruEmail');
+  localStorage.removeItem('guruNama');
+
   if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
     google.accounts.id.disableAutoSelect();
     if (S.email) {
@@ -1569,10 +1573,15 @@ async function validateAndLoad() {
     const r2 = await callGAS('validateGuru', { email: S.email });
     S.nama = r2.data.nama;
 
-    // 2. Cek absensi hari ini
+    // 2. Simpan sesi ke localStorage agar tidak perlu login ulang
+    //    saat halaman di-refresh atau dibuka kembali.
+    localStorage.setItem('guruEmail', S.email);
+    localStorage.setItem('guruNama',  S.nama);
+
+    // 3. Cek absensi hari ini (langsung dari server, bukan dari state)
     await refreshStatus();
 
-    // 3. Update UI
+    // 4. Update UI
     document.getElementById('main-nama').textContent      = S.nama;
     document.getElementById('main-nama-card').textContent = S.nama;
     document.getElementById('main-email').textContent     = S.email;
@@ -1586,6 +1595,9 @@ async function validateAndLoad() {
     showInstallBannerIfNeeded();
 
   } catch (e) {
+    // Hapus sesi jika validasi gagal (akun NONAKTIF, email tidak terdaftar, dll.)
+    localStorage.removeItem('guruEmail');
+    localStorage.removeItem('guruNama');
     document.getElementById('err-msg').textContent =
       e.message || 'Terjadi kesalahan. Pastikan email Anda sudah didaftarkan Admin ke sistem.';
     goScreen('screen-error');
@@ -2084,13 +2096,27 @@ function infoRow(k, v) {
 //  GIS library akan memanggil setupGoogleSignIn() via onload.
 // ─────────────────────────────────────────────────────────────
 window.onload = () => {
-  // Tampilkan spinner "memuat tombol" sambil tunggu GIS library selesai load
+  // ── Cek sesi tersimpan di localStorage ──────────────────────
+  // Jika guru sudah pernah login dan belum signOut, langsung masuk
+  // tanpa perlu login Google lagi.
+  const savedEmail = localStorage.getItem('guruEmail');
+  const savedNama  = localStorage.getItem('guruNama');
+
+  if (savedEmail && savedNama) {
+    S.email = savedEmail;
+    S.nama  = savedNama;
+    showLoadingScreen('Memuat sesi…', 'Memeriksa data absensi hari ini.');
+    validateAndLoad();   // tetap validasi ke GAS (cek NONAKTIF, dll.)
+    return;
+  }
+
+  // ── Tidak ada sesi → tampilkan halaman sign-in GIS ──────────
   document.getElementById('gsi-loading').classList.add('show');
   goScreen('screen-signin');
 
-  // Timeout fallback: jika GIS tidak muat dalam 8 detik, tampilkan pesan error
+  // Timeout fallback: jika GIS tidak muat dalam 8 detik
   setTimeout(() => {
-    const btn = document.getElementById('google-signin-btn');
+    const btn     = document.getElementById('google-signin-btn');
     const loading = document.getElementById('gsi-loading');
     if (!btn || btn.innerHTML.trim() === '') {
       loading.innerHTML =
