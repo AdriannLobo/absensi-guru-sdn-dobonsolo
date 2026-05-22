@@ -982,6 +982,23 @@
 <!-- ══════════════════════ SCREEN: SIGN-IN ══════════════════════ -->
 <div class="screen active" id="screen-signin">
 
+  <!-- Titik tiga di pojok kanan atas halaman awal -->
+  <div style="position:fixed;top:14px;right:14px;z-index:100;">
+    <button onclick="toggleMenuAwal()" id="menu-awal-btn"
+      style="width:38px;height:38px;background:rgba(255,255,255,.22);border:none;border-radius:12px;
+             color:#fff;font-size:20px;cursor:pointer;line-height:38px;text-align:center;">⋮</button>
+    <div id="dropdown-awal"
+      style="display:none;position:absolute;right:0;top:46px;background:#fff;border-radius:14px;
+             box-shadow:0 8px 28px rgba(0,0,0,.18);overflow:hidden;min-width:170px;">
+      <button onclick="gantiAkun()"
+        style="width:100%;padding:14px 18px;border:none;background:none;text-align:left;
+               font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;
+               color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;">
+        🔄 Ganti Akun
+      </button>
+    </div>
+  </div>
+
   <div class="signin-hero">
     <div class="signin-logo">🏫</div>
     <div class="signin-school-name">SDN Dobonsolo</div>
@@ -993,17 +1010,23 @@
     <div class="signin-card-emoji">👋</div>
     <div class="signin-card-title">Selamat Datang</div>
     <div class="signin-card-sub">
-      Masuk menggunakan akun Google sekolah Anda.<br>
-      Kamera akan berfungsi penuh setelah sign-in.
+      Tap tombol di bawah untuk masuk ke sistem absensi.<br>
+      Gunakan akun Gmail sekolah yang sudah didaftarkan Admin.
     </div>
 
-    <!-- Google Identity Services renders its button here -->
-    <div id="google-signin-btn"></div>
+    <!-- Tombol Masuk utama -->
+    <button class="btn btn-green" id="btn-masuk" onclick="doMasuk()"
+      style="margin-bottom:14px;font-size:16px;padding:16px;">
+      🔐 Masuk ke Sistem
+    </button>
 
-    <!-- Shown while GIS library loads or while validating -->
+    <!-- GIS button — tersembunyi, dipanggil hanya jika tidak ada sesi -->
+    <div id="google-signin-btn" style="display:none;"></div>
+
+    <!-- Loading spinner -->
     <div class="gsi-loading" id="gsi-loading">
       <div class="spinner"></div>
-      <span id="gsi-loading-text">Memuat tombol login…</span>
+      <span id="gsi-loading-text">Memuat…</span>
     </div>
   </div>
 
@@ -1011,7 +1034,7 @@
     <strong>ℹ️ Petunjuk Login</strong>
     ✔ Gunakan akun Gmail sekolah yang sudah didaftarkan Admin<br>
     ✔ Jika muncul pop-up Google, klik <b>Izinkan</b><br>
-    ✔ Hubungi Admin jika akun Anda tidak terdaftar di sistem
+    ✔ Tap ⋮ di pojok kanan atas untuk ganti akun
   </div>
 
   <div class="h20"></div>
@@ -1593,9 +1616,14 @@ function gantiAkun() {
   S.nama       = '';
   S.sudahAbsen = false;
   closeMenu();
+  closeMenuAwal();
   stopScanner();
   goScreen('screen-signin');
-  // Trigger ulang GIS prompt agar picker muncul
+  // Reset tombol Masuk
+  const btnMasuk = document.getElementById('btn-masuk');
+  if (btnMasuk) { btnMasuk.disabled = false; btnMasuk.textContent = '🔐 Masuk ke Sistem'; }
+  document.getElementById('gsi-loading').classList.remove('show');
+  // Trigger GIS prompt untuk pilih akun baru
   setTimeout(() => {
     if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
       google.accounts.id.prompt();
@@ -2152,36 +2180,62 @@ function infoRow(k, v) {
 //  (Tidak langsung call backend karena belum ada email.)
 //  GIS library akan memanggil setupGoogleSignIn() via onload.
 // ─────────────────────────────────────────────────────────────
+// Saat halaman dibuka → langsung tampilkan screen-signin (halaman awal)
+// Guru harus tap "Masuk" secara manual — tidak ada auto-login saat buka app.
 window.onload = () => {
-  // ── Cek sesi tersimpan di localStorage ──────────────────────
-  // Jika guru sudah pernah login (dan belum Ganti Akun / Keluar),
-  // langsung masuk tanpa perlu klik akun Google lagi.
+  goScreen('screen-signin');
+};
+
+// Dipanggil saat guru tap tombol "Masuk"
+async function doMasuk() {
   const savedEmail = localStorage.getItem('guruEmail');
   const savedNama  = localStorage.getItem('guruNama');
 
   if (savedEmail && savedNama) {
+    // ── Ada sesi → langsung masuk tanpa picker Google ──────────
     S.email = savedEmail;
     S.nama  = savedNama;
     showLoadingScreen('Memuat sesi…', 'Memeriksa data absensi hari ini.');
     validateAndLoad();
-    return;
-  }
+  } else {
+    // ── Belum ada sesi → tampilkan GIS untuk pilih akun ────────
+    const btn = document.getElementById('btn-masuk');
+    btn.disabled = true;
+    btn.textContent = '⏳ Memuat login Google…';
+    document.getElementById('gsi-loading').classList.add('show');
 
-  // ── Tidak ada sesi → tampilkan halaman sign-in GIS ──────────
-  document.getElementById('gsi-loading').classList.add('show');
-  goScreen('screen-signin');
-
-  setTimeout(() => {
-    const btn     = document.getElementById('google-signin-btn');
-    const loading = document.getElementById('gsi-loading');
-    if (!btn || btn.innerHTML.trim() === '') {
-      loading.innerHTML =
-        '<span style="color:var(--red);font-size:13px;font-weight:700;">' +
-        '⚠️ Tombol login gagal dimuat.<br>Periksa koneksi internet atau buka kembali halaman ini.</span>';
-      loading.classList.add('show');
+    // Pastikan GIS sudah siap lalu trigger prompt
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+      google.accounts.id.prompt();
+    } else {
+      // GIS belum load — tunggu sebentar lalu coba lagi
+      setTimeout(() => {
+        if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+          google.accounts.id.prompt();
+        } else {
+          document.getElementById('gsi-loading').innerHTML =
+            '<span style="color:var(--red);font-size:13px;font-weight:700;">' +
+            '⚠️ Gagal memuat login Google.<br>Periksa koneksi internet lalu muat ulang halaman.</span>';
+        }
+      }, 3000);
     }
-  }, 8000);
-};
+  }
+}
+
+// Toggle menu titik tiga di halaman awal
+function toggleMenuAwal() {
+  const m = document.getElementById('dropdown-awal');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function closeMenuAwal() {
+  const m = document.getElementById('dropdown-awal');
+  if (m) m.style.display = 'none';
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#menu-awal-btn') && !e.target.closest('#dropdown-awal')) {
+    closeMenuAwal();
+  }
+});
 </script>
 </body>
 </html>
