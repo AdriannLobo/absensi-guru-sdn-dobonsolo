@@ -1524,14 +1524,22 @@ function setupGoogleSignIn() {
   loading.classList.remove('show');
 
   try {
+    // Ambil email tersimpan untuk login_hint — kunci agar GIS skip picker
+    // bagi pengguna yang sudah pernah login sebelumnya.
+    const savedEmail = localStorage.getItem('guruEmail');
+
     google.accounts.id.initialize({
-      client_id    : GOOGLE_CLIENT_ID,
-      callback     : handleGoogleSignIn,
-      auto_select  : true,   // Auto sign-in jika sebelumnya sudah login
+      client_id           : GOOGLE_CLIENT_ID,
+      callback            : handleGoogleSignIn,
+      auto_select         : true,
       cancel_on_tap_outside: false,
+      // login_hint: memberi tahu Google akun mana yang aktif →
+      // Google langsung pakai akun itu tanpa tampilkan picker.
+      // Hanya diisi jika ada sesi tersimpan.
+      ...(savedEmail ? { login_hint: savedEmail } : {}),
     });
 
-    // Render tombol Google Sign-In
+    // Render tombol Google Sign-In (cadangan jika One Tap tidak muncul)
     google.accounts.id.renderButton(
       document.getElementById('google-signin-btn'),
       {
@@ -1543,7 +1551,8 @@ function setupGoogleSignIn() {
       }
     );
 
-    // Tampilkan One Tap prompt jika tersedia
+    // Panggil One Tap — dengan login_hint, Google akan auto sign-in
+    // tanpa picker jika cookie sesi masih valid.
     google.accounts.id.prompt();
 
   } catch (e) {
