@@ -1050,7 +1050,29 @@
 <!-- ══════════════════════ SCREEN: MAIN ══════════════════════ -->
 <div class="screen" id="screen-main">
   <div class="hero" style="position:relative;">
-    <button class="signout-btn" onclick="signOut()">🚪 Keluar</button>
+    <!-- Menu titik tiga -->
+    <div style="position:absolute;top:14px;right:14px;z-index:20;">
+      <button onclick="toggleMenu()" id="menu-btn"
+        style="width:38px;height:38px;background:rgba(255,255,255,.18);border:none;border-radius:12px;
+               color:#fff;font-size:20px;cursor:pointer;line-height:38px;text-align:center;">⋮</button>
+      <div id="dropdown-menu"
+        style="display:none;position:absolute;right:0;top:46px;background:#fff;border-radius:14px;
+               box-shadow:0 8px 28px rgba(0,0,0,.18);overflow:hidden;min-width:170px;">
+        <button onclick="gantiAkun()"
+          style="width:100%;padding:14px 18px;border:none;background:none;text-align:left;
+                 font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;
+                 color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;">
+          🔄 Ganti Akun
+        </button>
+        <div style="height:1px;background:var(--border);margin:0 12px;"></div>
+        <button onclick="signOut()"
+          style="width:100%;padding:14px 18px;border:none;background:none;text-align:left;
+                 font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;
+                 color:var(--red);cursor:pointer;display:flex;align-items:center;gap:10px;">
+          🚪 Keluar
+        </button>
+      </div>
+    </div>
     <div class="hero-chip">📋 Absensi Digital</div>
     <h1>Halo, <span id="main-nama">Guru</span>! 👋</h1>
     <div class="hero-sub" id="main-email">email@gmail.com</div>
@@ -1546,19 +1568,57 @@ function parseJWT(token) {
  * Sign-out: cabut sesi Google dan kembali ke halaman login.
  */
 function signOut() {
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    google.accounts.id.disableAutoSelect();
-    if (S.email) {
-      google.accounts.id.revoke(S.email, () => {});
-    }
-  }
+  // Hapus sesi tersimpan — tapi TIDAK revoke Google session,
+  // sehingga saat buka lagi GIS bisa auto sign-in tanpa picker.
+  localStorage.removeItem('guruEmail');
+  localStorage.removeItem('guruNama');
   S.email      = '';
   S.nama       = '';
   S.sudahAbsen = false;
+  closeMenu();
   stopScanner();
   goScreen('screen-signin');
   toast('👋 Anda telah keluar dari sistem.', 'info', 3000);
 }
+
+// Ganti Akun: revoke Google session → paksa picker muncul lagi
+function gantiAkun() {
+  localStorage.removeItem('guruEmail');
+  localStorage.removeItem('guruNama');
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+    if (S.email) google.accounts.id.revoke(S.email, () => {});
+  }
+  S.email      = '';
+  S.nama       = '';
+  S.sudahAbsen = false;
+  closeMenu();
+  stopScanner();
+  goScreen('screen-signin');
+  // Trigger ulang GIS prompt agar picker muncul
+  setTimeout(() => {
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+      google.accounts.id.prompt();
+    }
+  }, 500);
+  toast('🔄 Silakan pilih akun Google lain.', 'info', 3000);
+}
+
+// Toggle dropdown menu titik tiga
+function toggleMenu() {
+  const m = document.getElementById('dropdown-menu');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function closeMenu() {
+  const m = document.getElementById('dropdown-menu');
+  if (m) m.style.display = 'none';
+}
+// Tutup menu saat klik di luar
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#menu-btn') && !e.target.closest('#dropdown-menu')) {
+    closeMenu();
+  }
+});
 
 // ─────────────────────────────────────────────────────────────
 //  INIT — Validasi guru ke GAS setelah sign-in Google
@@ -1570,10 +1630,15 @@ async function validateAndLoad() {
     const r2 = await callGAS('validateGuru', { email: S.email });
     S.nama = r2.data.nama;
 
-    // 2. Cek absensi hari ini
+    // 2. Simpan sesi ke localStorage — guru tidak perlu login ulang
+    //    setiap buka aplikasi. Sesi hanya hilang jika "Ganti Akun" atau "Keluar".
+    localStorage.setItem('guruEmail', S.email);
+    localStorage.setItem('guruNama',  S.nama);
+
+    // 3. Cek absensi hari ini langsung dari server
     await refreshStatus();
 
-    // 3. Update UI
+    // 4. Update UI
     document.getElementById('main-nama').textContent      = S.nama;
     document.getElementById('main-nama-card').textContent = S.nama;
     document.getElementById('main-email').textContent     = S.email;
@@ -1587,6 +1652,9 @@ async function validateAndLoad() {
     showInstallBannerIfNeeded();
 
   } catch (e) {
+    // Hapus sesi jika validasi gagal (akun NONAKTIF / tidak terdaftar)
+    localStorage.removeItem('guruEmail');
+    localStorage.removeItem('guruNama');
     document.getElementById('err-msg').textContent =
       e.message || 'Terjadi kesalahan. Pastikan email Anda sudah didaftarkan Admin ke sistem.';
     goScreen('screen-error');
@@ -2085,13 +2153,26 @@ function infoRow(k, v) {
 //  GIS library akan memanggil setupGoogleSignIn() via onload.
 // ─────────────────────────────────────────────────────────────
 window.onload = () => {
-  // Tampilkan spinner "memuat tombol" sambil tunggu GIS library selesai load
+  // ── Cek sesi tersimpan di localStorage ──────────────────────
+  // Jika guru sudah pernah login (dan belum Ganti Akun / Keluar),
+  // langsung masuk tanpa perlu klik akun Google lagi.
+  const savedEmail = localStorage.getItem('guruEmail');
+  const savedNama  = localStorage.getItem('guruNama');
+
+  if (savedEmail && savedNama) {
+    S.email = savedEmail;
+    S.nama  = savedNama;
+    showLoadingScreen('Memuat sesi…', 'Memeriksa data absensi hari ini.');
+    validateAndLoad();
+    return;
+  }
+
+  // ── Tidak ada sesi → tampilkan halaman sign-in GIS ──────────
   document.getElementById('gsi-loading').classList.add('show');
   goScreen('screen-signin');
 
-  // Timeout fallback: jika GIS tidak muat dalam 8 detik, tampilkan pesan error
   setTimeout(() => {
-    const btn = document.getElementById('google-signin-btn');
+    const btn     = document.getElementById('google-signin-btn');
     const loading = document.getElementById('gsi-loading');
     if (!btn || btn.innerHTML.trim() === '') {
       loading.innerHTML =
