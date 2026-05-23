@@ -1457,7 +1457,7 @@
 // ║    5. Salin Client ID (format: xxxxxx.apps.googleusercontent.com) ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-const GAS_URL          = 'https://script.google.com/macros/s/AKfycbxJD75d8ZGC71dP65dQNye_x9FaFnx8ijlWfMIP-IdjFyCBMhd1S07JrVdpoDPUsW2w/exec';
+const GAS_URL          = 'https://script.google.com/macros/s/AKfycbySA3QNz8AWNH2Z6p6vKNzJaZ6tH3Y4Uu_Uk5uwYRUxFRwVN5br2KBe9hw4_hBNfcby/exec';
 const GOOGLE_CLIENT_ID = '131466305902-kpb3dchkanm3lqr2qhfch9lceoibrbl1.apps.googleusercontent.com';
 
 // ─────────────────────────────────────────────────────────────
@@ -1600,17 +1600,19 @@ function parseJWT(token) {
  * Sign-out: cabut sesi Google dan kembali ke halaman login.
  */
 function signOut() {
-  // Hapus sesi tersimpan — tapi TIDAK revoke Google session,
-  // sehingga saat buka lagi GIS bisa auto sign-in tanpa picker.
-  localStorage.removeItem('guruEmail');
-  localStorage.removeItem('guruNama');
+  // Cukup kembali ke halaman awal — TIDAK hapus localStorage.
+  // Saat tap MASUK lagi, langsung masuk dengan akun yang sama.
   S.email      = '';
   S.nama       = '';
   S.sudahAbsen = false;
   closeMenu();
   stopScanner();
   goScreen('screen-signin');
-  toast('👋 Anda telah keluar dari sistem.', 'info', 3000);
+  // Reset tombol Masuk ke kondisi awal
+  const btn = document.getElementById('btn-masuk');
+  if (btn) { btn.disabled = false; btn.textContent = '🔐 Masuk ke Sistem'; }
+  document.getElementById('gsi-loading').classList.remove('show');
+  toast('👋 Sampai jumpa! Tap Masuk untuk kembali.', 'info', 3000);
 }
 
 // Ganti Akun: revoke Google session → paksa picker muncul lagi
@@ -2201,33 +2203,37 @@ async function doMasuk() {
   const savedNama  = localStorage.getItem('guruNama');
 
   if (savedEmail && savedNama) {
-    // ── Ada sesi → langsung masuk tanpa picker Google ──────────
+    // ── Ada sesi tersimpan → langsung masuk, tanpa picker ──────
     S.email = savedEmail;
     S.nama  = savedNama;
-    showLoadingScreen('Memuat sesi…', 'Memeriksa data absensi hari ini.');
+    showLoadingScreen('Memuat…', 'Memeriksa data absensi hari ini.');
     validateAndLoad();
+
   } else {
-    // ── Belum ada sesi → tampilkan GIS untuk pilih akun ────────
+    // ── Belum ada sesi → panggil GIS picker satu kali ──────────
     const btn = document.getElementById('btn-masuk');
-    btn.disabled = true;
-    btn.textContent = '⏳ Memuat login Google…';
+    btn.disabled    = true;
+    btn.textContent = '⏳ Menghubungi Google…';
     document.getElementById('gsi-loading').classList.add('show');
 
-    // Pastikan GIS sudah siap lalu trigger prompt
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-      google.accounts.id.prompt();
-    } else {
-      // GIS belum load — tunggu sebentar lalu coba lagi
-      setTimeout(() => {
-        if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-          google.accounts.id.prompt();
-        } else {
-          document.getElementById('gsi-loading').innerHTML =
-            '<span style="color:var(--red);font-size:13px;font-weight:700;">' +
-            '⚠️ Gagal memuat login Google.<br>Periksa koneksi internet lalu muat ulang halaman.</span>';
-        }
-      }, 3000);
-    }
+    const tryPrompt = () => {
+      if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+        // Tampilkan Google Sign-In button sebagai fallback visual
+        document.getElementById('google-signin-btn').style.display = 'block';
+        google.accounts.id.prompt((notification) => {
+          // Jika One Tap tidak bisa muncul (misal di PWA sandbox),
+          // user bisa klik tombol Google yang sudah dirender.
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            document.getElementById('gsi-loading').classList.remove('show');
+            btn.disabled    = false;
+            btn.textContent = '🔐 Masuk ke Sistem';
+          }
+        });
+      } else {
+        setTimeout(tryPrompt, 1000);
+      }
+    };
+    tryPrompt();
   }
 }
 
