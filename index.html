@@ -1211,10 +1211,11 @@
       <div style="font-size:40px; margin-bottom:12px;">📋</div>
       <div style="font-size:17px; font-weight:900; margin-bottom:18px;">Konfirmasi Data Absensi</div>
       <div class="info-table">
-        <div class="info-row"><span class="k">Nama Guru</span>   <span class="v" id="k-nama">—</span></div>
-        <div class="info-row"><span class="k">Koordinat GPS</span><span class="v" id="k-gps">—</span></div>
-        <div class="info-row"><span class="k">QR / Meja</span>   <span class="v" id="k-meja">—</span></div>
-        <div class="info-row"><span class="k">Jarak Sekolah</span><span class="v" id="k-jarak">Menghitung…</span></div>
+        <div class="info-row"><span class="k">Nama Guru</span><span class="v" id="k-nama">—</span></div>
+        <div class="info-row"><span class="k">Meja / Kelas</span><span class="v" id="k-meja">—</span></div>
+        <!-- k-gps dan k-jarak tetap ada di DOM tapi tersembunyi — data masuk ke server -->
+        <span id="k-gps" style="display:none"></span>
+        <span id="k-jarak" style="display:none"></span>
       </div>
     </div>
     <button class="btn btn-green" id="btn-submit-hadir" onclick="submitHadir()">🎉 Konfirmasi &amp; Catat Kehadiran</button>
@@ -2131,7 +2132,13 @@ async function submitHadir() {
     S.sudahAbsen = true;
     goScreen('screen-success');
   } catch (e) {
-    toast('❌ ' + e.message, 'err', 6000);
+    const msg = e.message || '';
+    // Deteksi error radius/GPS → tampilkan modal khusus di tengah
+    if (msg.includes('meter') || msg.includes('radius') || msg.includes('Lokasi') || msg.includes('luar')) {
+      openModal('modal-gps-error');
+    } else {
+      toast('❌ ' + msg, 'err', 6000);
+    }
     btn.disabled = false; btn.textContent = '🎉 Konfirmasi & Catat Kehadiran';
   }
 }
@@ -2278,5 +2285,40 @@ document.addEventListener('click', (e) => {
   }
 });
 </script>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: DILUAR RADIUS SEKOLAH
+══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-gps-error"
+     style="align-items:center; padding:24px;">
+  <div class="modal-sheet" style="border-radius:24px; max-width:360px; text-align:center; padding:36px 28px 32px;">
+
+    <!-- Ikon -->
+    <div style="font-size:64px; margin-bottom:16px; line-height:1;">📍</div>
+
+    <!-- Judul -->
+    <div style="font-size:20px; font-weight:900; color:var(--text); margin-bottom:10px;">
+      Di Luar Area Sekolah
+    </div>
+
+    <!-- Garis dekoratif -->
+    <div style="width:48px; height:4px; background:var(--green); border-radius:100px; margin:0 auto 18px;"></div>
+
+    <!-- Pesan utama -->
+    <div style="font-size:14px; font-weight:600; color:var(--muted); line-height:1.75; margin-bottom:22px;">
+      Anda tidak dapat melakukan absensi dari luar lingkungan sekolah.<br><br>
+      Mohon datang ke sekolah dan pastikan GPS aktif sebelum melakukan absensi tepat waktu.<br><br>
+      <span style="color:var(--text); font-weight:700;">Terima kasih atas pengertian Anda. 🙏</span>
+    </div>
+
+
+
+    <button class="btn btn-green" onclick="closeModal('modal-gps-error'); resetHadir();"
+      style="margin-bottom:0;">
+      🏠 Kembali ke Beranda
+    </button>
+  </div>
+</div>
+
 </body>
 </html>
